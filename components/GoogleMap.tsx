@@ -8,16 +8,19 @@
  *   2. Uses useEffect to initialise and update the map in the browser.
  *   3. Depends on the Google Maps JavaScript API (browser-only).
  *
- * Phase 2 additions
- * ─────────────────
- * • `onMapReady` callback — called once with the `google.maps.Map` instance
- *   so the parent component can store it and later call `map.getCenter()`.
+ * Props
+ * ─────
+ * `onMapReady`      — called once with the `google.maps.Map` instance so the
+ *                     parent can read `map.getCenter()` when running a search.
  *
- * • `places` prop — array of NearbyPlace objects.  Whenever this array
- *   changes, old markers are removed and new ones are created.
+ * `places`          — array of NearbyPlace objects. Whenever this array changes,
+ *                     old markers are removed and new ones are created.
  *
- * • `selectedPlaceId` prop — when the user clicks a list item the
- *   corresponding marker's InfoWindow is programmatically opened.
+ * `selectedPlaceId` — when the parent selects a place (e.g. from the list),
+ *                     the map pans to it and its InfoWindow opens.
+ *
+ * `onMarkerClick`   — called with the placeId when the user clicks a marker,
+ *                     so the parent can highlight the corresponding list item.
  *
  * Marker management — AdvancedMarkerElement (Places API New)
  * ───────────────────────────────────────────────────────────
@@ -50,6 +53,8 @@ interface GoogleMapProps {
   places?: NearbyPlace[];
   selectedPlaceId?: string | null;
   onMapReady?: (map: google.maps.Map) => void;
+  /** Called with the placeId when the user clicks a marker on the map. */
+  onMarkerClick?: (placeId: string) => void;
 }
 
 /** Build the HTML string shown inside a marker's InfoWindow. */
@@ -62,8 +67,7 @@ function buildInfoContent(place: NearbyPlace): string {
     <div style="font-family:sans-serif;font-size:13px;max-width:220px;line-height:1.5">
       <strong style="font-size:14px">${place.name}</strong><br/>
       ${place.address ? `<span style="color:#555">${place.address}</span><br/>` : ""}
-      ${rating}<br/>
-      <span style="color:#999;font-size:11px">ID: ${place.placeId}</span>
+      ${rating}
     </div>
   `.trim();
 }
@@ -74,13 +78,14 @@ export default function GoogleMap({
   places = [],
   selectedPlaceId = null,
   onMapReady,
+  onMarkerClick,
 }: GoogleMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   // AdvancedMarkerElement is the new marker type required by the Places API (New).
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
-  // Map from placeId → AdvancedMarkerElement for InfoWindow lookup by ID.
+  // Map from placeId → AdvancedMarkerElement for lookup by ID.
   const markerMapRef = useRef<
     Map<string, google.maps.marker.AdvancedMarkerElement>
   >(new Map());
@@ -134,23 +139,25 @@ export default function GoogleMap({
           title: place.name,
         });
 
-        // Clicking a marker opens the shared InfoWindow anchored to that marker.
+        // Clicking a marker opens the InfoWindow AND notifies the parent so
+        // the matching list card can be highlighted and scrolled into view.
         marker.addListener("click", () => {
           infoWindowRef.current?.setContent(buildInfoContent(place));
           infoWindowRef.current?.open({ map, anchor: marker });
+          onMarkerClick?.(place.placeId);
         });
 
         markersRef.current.push(marker);
         markerMapRef.current.set(place.placeId, marker);
       });
     });
-  }, [places]);
+  }, [places, onMarkerClick]);
 
   useEffect(() => {
     renderMarkers();
   }, [renderMarkers]);
 
-  // ── Open InfoWindow when the user selects a list item ───────────────────
+  // ── Open InfoWindow when the parent selects a place (e.g. list click) ───
   useEffect(() => {
     if (!selectedPlaceId || !mapRef.current) return;
     const marker = markerMapRef.current.get(selectedPlaceId);

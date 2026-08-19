@@ -3,16 +3,23 @@
 /**
  * components/PlaceList.tsx
  *
- * Displays the nearby-search results as a scrollable list.
+ * Displays nearby-search results as a scrollable list.
  *
  * Each card shows:
  *   • Place name
- *   • Address (vicinity)
+ *   • Address (formattedAddress)
  *   • Star rating (if available)
- *   • Place ID (small, muted)
  *
- * Clicking a card calls onSelect so the parent can highlight the
- * corresponding marker on the map.
+ * Clicking a card calls `onSelect` so the parent can centre the map and
+ * open the corresponding marker's InfoWindow.
+ *
+ * States
+ * ──────
+ * loading  — skeleton cards shown while the API request is in flight.
+ * error    — styled error banner when the request fails.
+ * empty    — two distinct messages:
+ *              • No search yet  → "Select a category above to search."
+ *              • Empty result   → "No places found nearby."
  */
 
 import { type NearbyPlace } from "@/lib/places";
@@ -21,9 +28,13 @@ interface PlaceListProps {
   places: NearbyPlace[];
   loading: boolean;
   error: string | null;
+  /** True once the user has triggered at least one search. */
+  hasSearched: boolean;
   selectedPlaceId: string | null;
   onSelect: (placeId: string) => void;
 }
+
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function StarRating({ rating }: { rating: number }) {
   const full = Math.round(rating);
@@ -36,47 +47,72 @@ function StarRating({ rating }: { rating: number }) {
   );
 }
 
+/** Animated placeholder cards shown while the API request is in flight. */
+function SkeletonList() {
+  return (
+    <ol className="mt-3 space-y-2" aria-busy="true" aria-label="Loading places">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <li
+          key={i}
+          className="px-3 py-2 rounded-lg border border-gray-200 bg-white animate-pulse"
+        >
+          <div className="h-3.5 bg-gray-200 rounded w-3/4 mb-2" />
+          <div className="h-2.5 bg-gray-100 rounded w-full mb-1" />
+          <div className="h-2.5 bg-gray-100 rounded w-1/3" />
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function PlaceList({
   places,
   loading,
   error,
+  hasSearched,
   selectedPlaceId,
   onSelect,
 }: PlaceListProps) {
   if (loading) {
-    return (
-      <p className="text-sm text-gray-500 mt-4 text-center animate-pulse">
-        Searching nearby…
-      </p>
-    );
+    return <SkeletonList />;
   }
 
   if (error) {
     return (
-      <p className="text-sm text-red-500 mt-4 text-center">{error}</p>
+      <div
+        role="alert"
+        className="mt-3 px-3 py-2.5 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700"
+      >
+        <p className="font-medium">Search failed</p>
+        <p className="mt-0.5 text-red-600 text-xs">{error}</p>
+      </div>
     );
   }
 
   if (places.length === 0) {
+    const message = hasSearched
+      ? "No places found nearby. Try panning the map or choosing a different category."
+      : "Select a category above to search for nearby places.";
     return (
-      <p className="text-sm text-gray-400 mt-4 text-center">
-        Select a category to find nearby places.
-      </p>
+      <p className="mt-4 text-sm text-gray-400 text-center px-2">{message}</p>
     );
   }
 
   return (
-    <ol className="mt-3 space-y-2 overflow-y-auto flex-1">
+    <ol className="mt-3 space-y-2 overflow-y-auto flex-1 min-h-0">
       {places.map((place) => {
         const isSelected = place.placeId === selectedPlaceId;
         return (
           <li key={place.placeId}>
             <button
               onClick={() => onSelect(place.placeId)}
+              data-place-id={place.placeId}
               className={[
                 "w-full text-left px-3 py-2 rounded-lg border transition-colors",
                 isSelected
-                  ? "border-blue-500 bg-blue-50"
+                  ? "border-blue-500 bg-blue-50 ring-1 ring-blue-400"
                   : "border-gray-200 bg-white hover:bg-gray-50",
               ].join(" ")}
             >
@@ -93,9 +129,6 @@ export default function PlaceList({
                   <StarRating rating={place.rating} />
                 </div>
               )}
-              <p className="text-[10px] text-gray-400 mt-1 truncate">
-                ID: {place.placeId}
-              </p>
             </button>
           </li>
         );
